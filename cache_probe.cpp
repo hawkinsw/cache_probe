@@ -1,34 +1,46 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <emmintrin.h>
 #include <iostream>
+#include <string.h>
+#include <x86intrin.h>
 
-const unsigned int ITERATIONS{500};
+using namespace std::chrono_literals;
 
-const unsigned MAX_CACHE_LINE_SIZE{2048};
+const unsigned int ITERATIONS{100};
+const unsigned MAX_CACHE_LINE_SIZE{256};
 
-inline void flush(volatile char *ptr) {
-  asm volatile("clflush %0\n" ::"m"(*ptr));
-}
+  alignas(64) volatile int results[MAX_CACHE_LINE_SIZE] = {0, };
+  alignas(64) volatile int _[MAX_CACHE_LINE_SIZE] = {0, };
+  alignas(64) volatile char data[MAX_CACHE_LINE_SIZE] = {0, };
 
 void probe() {
-  volatile char read_base{0};
-  volatile char read_probe{0};
-
-  std::chrono::nanoseconds duration{0};
-  alignas(uint64_t) volatile char data[MAX_CACHE_LINE_SIZE * sizeof(char)];
-
-  for (unsigned int distance{0}; distance < MAX_CACHE_LINE_SIZE; distance++) {
-    auto before = std::chrono::high_resolution_clock::now();
-    for (unsigned int i = 0; i < ITERATIONS; i++) {
-      flush(&data[0]);
+  volatile register char read_base{0};
+  volatile register char read_probe{0};
+  unsigned int junk{0};
+  int distance{0};
+  volatile register int64_t before, after;
+  unsigned int i{0};
+  unsigned int mix{0};
+  volatile char *addr;
+  for (i = 0; i < ITERATIONS; i++) {
+    for (distance = 0; distance < MAX_CACHE_LINE_SIZE; distance++) {
+      mix = ((distance * 167) + 13) & 255;
+      addr = &data[mix];
+      _mm_clflush((void*)&data[0]);
+      _mm_clflush((void*)&data[mix]);
+      for (volatile int z = 0; z < 500; z++) {} /* Delay to let the cache fill. */
       read_base = data[0];
-      read_probe = data[distance];
+      before = __rdtscp(&junk);
+      read_probe = *addr;
+      after = __rdtscp(&junk);
+      results[mix] += after - before;
     }
-    auto after = std::chrono::high_resolution_clock::now();
-    std::chrono::nanoseconds difference = after - before;
+  }
+  for (distance = 0; distance < MAX_CACHE_LINE_SIZE; distance++) {
     std::cout << distance << ", "
-              << static_cast<double>(difference.count()) / ITERATIONS << "\n";
+              << static_cast<double>(results[distance]) / ITERATIONS << "\n";
   }
 }
 
