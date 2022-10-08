@@ -1,7 +1,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#ifndef ARM
 #include <x86intrin.h>
+#endif
 
 const unsigned int ITERATIONS{100};
 /*
@@ -32,6 +34,7 @@ void probe() {
   unsigned int i{0};
   unsigned int mix{0};
   volatile char *addr;
+
   for (i = 0; i < ITERATIONS; i++) {
     for (distance = 0; distance < MAX_CACHE_LINE_SIZE; distance++) {
       mix = ((distance * 167) + 13) & 255;
@@ -39,14 +42,31 @@ void probe() {
       // is pure access.
       addr = &data[mix];
       // Flush the caches every. single. time. Won't get fooled again.
+#ifndef ARM
       _mm_clflush((void*)&data[0]);
       _mm_clflush((void*)&data[mix]);
+#endif
+
       for (volatile int z = 0; z < 500; z++) {} //Delay to let the flush happen
+
       read_base = data[0];
-			// Use the p variant of the rdtsc instruction for ordering purposes.
+      // Use the p variant of the rdtsc instruction for ordering purposes.
+#ifdef ARM
+      asm volatile ("dsb sy \n mrs %0, pmccntr_el0 \n dsb sy": "=r" (before):);
+#else
       before = __rdtscp(&junk);
+#endif
+
       read_probe = *addr;
+
+#ifdef ARM
+      asm volatile ("dsb sy \n mrs %0, pmccntr_el0 \n dsb sy": "=r" (after):);
+#else
       after = __rdtscp(&junk);
+#endif
+      printf("before: %llu\n", before);
+      printf("after: %llu\n", after);
+      printf("mix: %llu\n", mix);
       results[mix] += after - before;
     }
   }
