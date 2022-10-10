@@ -9,8 +9,10 @@ MODULE_VERSION("0.01");
 #define PMUSERENR_EN_EL0 (1 << 0)
 #define PMUSERENR_CR (1 << 2)           // How to enable the event count read.
 #define PMUSERENR_ER (1 << 3)           // How to enable the event count read.
-#define PMCNTENSET_EL0_ENABLE (1 << 31) // Enable the cycle count register.
-#define PMCR_E (1 << 0)
+#define PMCNTENSET_EL0_ENABLE (1 << 31 | 1 << 0) // Enable the cycle count
+                                                 // and the 0th perfomance
+                                                 // count register.
+#define PMCR_ENABLE (1 << 0)
 
 static void enable_counters(void * _) {
   uint64_t val = 0;
@@ -24,11 +26,11 @@ static void enable_counters(void * _) {
 
 
   /* What we did above was say, "When we enable performance monitoring, 
-   * these will be the events we want to watch." We still
+   * these will be the event registers we want to use." We still
    * need to actually enable them!
    */
   asm volatile("mrs %0, pmcr_el0" : "=r"(val));
-  asm volatile("msr pmcr_el0, %0" : : "r"(val | PMCR_E));
+  asm volatile("msr pmcr_el0, %0" : : "r"(val | PMCR_ENABLE));
 }
 
 static int __init perfc_module_init(void) {
